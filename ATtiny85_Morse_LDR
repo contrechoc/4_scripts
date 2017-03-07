@@ -1,0 +1,295 @@
+#include <avr/wdt.h>
+#include <avr/interrupt.h>
+
+//Define the LED Pin
+#define PIN_OUT        PB0
+#define onPin          PB1
+
+//Define unit length in ms
+#define START 50
+
+const char *nameString = "BEAM"; //around 8 characters MAX????
+
+volatile char WDFlag = 0;
+volatile char morseFlag = 0;
+
+volatile int iMorseCodeCounter = 0;
+
+volatile int fadeValue = 0;
+volatile char fadeUp = 0;
+volatile int WDCounter = 0;
+
+volatile char stepQ = 25;
+
+volatile char LDRstart = 0;
+
+int ADC1 = 1;
+
+String morseWord = "";
+
+//Build a struct with the morse code mapping
+static const struct {
+  const char letter, *code;
+}
+MorseMap[] =
+{
+  {
+    'A', ".-"
+  }
+  ,
+  {
+    'B', "-..."
+  }
+  ,
+  {
+    'C', "-.-."
+  }
+  ,
+  {
+    'D', "-.."
+  }
+  ,
+  {
+    'E', "."
+  }
+  ,
+  {
+    'F', "..-."
+  }
+  ,
+  {
+    'G', "--."
+  }
+  ,
+  {
+    'H', "...."
+  }
+  ,
+  {
+    'I', ".."
+  }
+  ,
+  {
+    'J', ".---"
+  }
+  ,
+  {
+    'K', "-.-"
+  }
+  ,
+  {
+    'L', ".-.."
+  }
+  ,
+  {
+    'M', "--"
+  }
+  ,
+  {
+    'N', "-."
+  }
+  ,
+  {
+    'O', "---"
+  }
+  ,
+  {
+    'P', ".--."
+  }
+  ,
+  {
+    'Q', "--.-"
+  }
+  ,
+  {
+    'R', ".-."
+  }
+  ,
+  {
+    'S', "..."
+  }
+  ,
+  {
+    'T', "-"
+  }
+  ,
+  {
+    'U', "..-"
+  }
+  ,
+  // { 'V', "...-"           },
+  // {  'W', ".--"           } ,
+  // {  'X', "-..-"           },
+  //{ 'Y', "-.--" },
+  //{ 'Z', "--.." },
+  {
+    ' ', "     "
+  }
+  , //Gap between word, seven units
+
+};
+
+//This runs each time the watch dog wakes us up from sleep
+ISR(WDT_vect) {
+
+  if ( ((WDCounter) % ( 5 * 64)) == 0 )
+  {
+    iMorseCodeCounter = 0;
+  }
+
+  if (LDRstart == 1 )
+  {
+    iMorseCodeCounter = 0;
+    LDRstart = 0;
+  }
+
+
+  if ( ((WDCounter++) % ( 5 * 17)) == 0 )
+  {
+    WDFlag = 1;
+    fadeUp = 1;
+  }
+  morseFlag++;
+}
+
+void setup()
+{
+  setup_watchdog(3);
+
+  DDRB   |= (1 << onPin);
+  DDRB   |= (1 << PIN_OUT);
+  for ( int i = 0; i < 5; i++) {
+    PORTB |= (1 << PIN_OUT);
+    delay( START );
+    PORTB &= ~(1 << PIN_OUT);
+    delay( START );
+    PORTB |= (1 << onPin);
+    delay( START );
+    PORTB &= ~(1 << onPin);
+    delay( START );
+  }
+  delay(2000);
+
+  morseWord = encode( nameString );
+}
+
+void watchingDOG() {
+  if ( WDFlag == 1) {
+    delay(50);
+    if ( fadeUp == 1 ) {
+      if ( fadeValue < 255) {
+        analogWrite(onPin, fadeValue);
+        fadeValue += stepQ;
+      }
+      else
+      {
+        fadeUp = 0;
+        fadeValue = 250;
+      }
+    }
+
+    if ( fadeUp == 0 ) {
+      if ( fadeValue > 0) {
+        analogWrite(onPin, fadeValue);
+        fadeValue -= stepQ;
+      }
+      else
+      {
+        analogWrite(onPin, 0);
+        WDFlag = 0;
+        fadeValue = 0;
+      }
+    }
+  }
+}
+
+
+void loop()
+{
+
+  if (  (analogRead ( ADC1 )) < 500 )
+  {
+    if ( iMorseCodeCounter >= morseWord.length()) {
+      LDRstart = 1;
+    }
+  }
+
+  watchingDOG();
+
+  if ( iMorseCodeCounter <= morseWord.length())
+  {
+    switch ( morseWord[iMorseCodeCounter] )
+    {
+      case '.': //dit
+        if ( (morseFlag % 4) == 1 )
+          PORTB |= (1 << PIN_OUT);
+        else if ( (morseFlag % 4) == 2 )
+          PORTB &= ~(1 << PIN_OUT);
+        else if ( (morseFlag % 4) == 3 ) {
+          iMorseCodeCounter++;
+          morseFlag = 0;
+        }
+        break;
+
+      case '-': //dah
+        if ( (morseFlag % 6) == 1 )
+          PORTB |= (1 << PIN_OUT);
+        else if ( (morseFlag % 6) == 4 )
+          PORTB &= ~(1 << PIN_OUT);
+        else if ( (morseFlag % 6) == 5 ) {
+          iMorseCodeCounter++;
+          morseFlag = 0;
+        }
+        break;
+
+      case ' ': //gap
+        iMorseCodeCounter  ++;
+        morseFlag = 0;
+
+    }
+    // if ( (morseFlag%2) == 1 ){
+    //iMorseCodeCounter++;
+  }
+}
+
+String encode( const char *string)
+{
+  size_t i, j;
+  String morseWord = "";
+
+  for ( i = 0; string[i]; ++i )
+  {
+    for ( j = 0; j < sizeof MorseMap / sizeof * MorseMap; ++j )
+    {
+      if ( toupper(string[i]) == MorseMap[j].letter )
+      {
+        morseWord += MorseMap[j].code;
+        break;
+      }
+    }
+    morseWord += " "; //Add tailing space to seperate the chars
+  }
+  return morseWord;
+}
+
+
+// 0=16ms, 1=32ms, 2=64ms, 3=128ms, 4=250ms, 5=500ms
+// 6=1sec, 7=2sec, 8=4sec, 9=8sec
+// From: http://interface.khm.de/index.php/lab/experiments/sleep_watchdog_battery/
+void setup_watchdog(int timerPrescaler) {
+
+  if (timerPrescaler > 9 ) timerPrescaler = 9; //Correct incoming amount if need be
+
+  byte bb = timerPrescaler & 7;
+  if (timerPrescaler > 7) bb |= (1 << 5); //Set the special 5th bit if necessary
+
+  //This order of commands is important and cannot be combined
+  MCUSR &= ~(1 << WDRF); //Clear the watch dog reset
+  WDTCR |= (1 << WDCE) | (1 << WDE); //Set WD_change enable, set WD enable
+  WDTCR = bb; //Set new watchdog timeout value
+  WDTCR |= _BV(WDIE); //Set the interrupt enable, this will keep unit from resetting after each int
+}
+
+
+
+
