@@ -5,6 +5,13 @@ int led2 = 1;
 
 int scriptNumber = 2; //here you can select one of the 4 scrips, 1,2,3,4
 
+
+//if scriptNumber = 1: depending on light value, either LED1 shines or LED2
+//if scriptNumber = 2: LED1 depending on LDR, LED2 is glowing regularly
+//if scriptNumber = 3: fading alternately, speed of fading by LDR
+//if scriptNumber = 4: depending on light value, blink alternating or both
+
+
 int ADC1 = 1;
 int call = 0;
 
